@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import ScanConfiguration from './components/ScanConfiguration'
 
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard' },
@@ -65,7 +66,7 @@ function App() {
           </span>
         </header>
 
-        <main className="flex-1 overflow-auto p-6">
+        <main className="flex-1 overflow-auto p-4 sm:p-6">
           <section className="mx-auto max-w-5xl">
             <h3 className="text-2xl font-semibold tracking-tight text-white">
               {NAV_ITEMS.find((item) => item.id === activeNav)?.label}
@@ -75,11 +76,17 @@ function App() {
               asset inventory, and vulnerability findings into this panel.
             </p>
 
-            <div className="mt-8 rounded-lg border border-slate-800 bg-[#111827] p-6">
-              <p className="text-sm text-slate-300">
-                Placeholder panel — replace with live data views for{' '}
-                <span className="font-medium text-white">{activeNav}</span>.
-              </p>
+            <div className="mt-8">
+              {activeNav === 'scans' ? (
+                <ScanConfiguration />
+              ) : (
+                <div className="rounded-lg border border-slate-800 bg-[#111827] p-6">
+                  <p className="text-sm text-slate-300">
+                    Placeholder panel — replace with live data views for{' '}
+                    <span className="font-medium text-white">{activeNav}</span>.
+                  </p>
+                </div>
+              )}
             </div>
           </section>
         </main>
