@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ForceGraph2D from 'react-force-graph-2d'
 import { forceCollide } from 'd3-force'
-import { mockTopology, deriveMaxCvss } from '../data/mockTopology'
+import { adaptScanResult } from '../data/adaptScanResult'
+import { deriveMaxCvss } from '../data/mockTopology'
+import parsedScan from '../../../tests/output/parsed-scan.json'
+
+const scanTopology = adaptScanResult(parsedScan)
 
 // CVSS v3 qualitative severity bands.
 const SEVERITY_BANDS = [
@@ -21,7 +25,7 @@ function radiusFor(score) {
   return 5 + (score / 10) * 7
 }
 
-function TopologyMap({ data = mockTopology }) {
+function TopologyMap({ data = scanTopology }) {
   const containerRef = useRef(null)
   const graphRef = useRef(null)
   const [size, setSize] = useState({ width: 0, height: 460 })
@@ -142,6 +146,17 @@ function TopologyMap({ data = mockTopology }) {
               {totalCves} CVEs. Node size and color track the highest CVSS on each
               host.
             </p>
+            {graphData.links.length === 0 && graphData.nodes.length > 0 && (
+              <p className="mt-1 text-xs text-amber-500/80">
+                No adjacency data in this scan — hosts are drawn unconnected
+                rather than inferring links.
+              </p>
+            )}
+            {totalCves === 0 && (
+              <p className="mt-1 text-xs text-amber-500/80">
+                No CVE data in this scan — every host renders at severity “None”.
+              </p>
+            )}
           </div>
 
           <button
