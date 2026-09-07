@@ -7,6 +7,77 @@ const TARGET_REGEX =
 
 const DEFAULT_TIMEOUT_MS = 120_000; // 2 minutes
 
+// ── Flag allowlist ───────────────────────────────────────────────────
+// Callers may pass extra nmap flags, so treat them as untrusted input: an
+// unrestricted list would let a caller write files anywhere this process can
+// (-oN/-oA), read arbitrary target lists (-iL), or run NSE scripts (--script).
+// Anything not named here is refused, including bare words, which nmap would
+// otherwise read as additional scan targets.
+const ALLOWED_FLAGS = new Set([
+  // Timing templates
+  "-T0", "-T1", "-T2", "-T3", "-T4", "-T5",
+  // Host discovery
+  "-Pn", "-sn", "-n", "-R",
+  // Scan techniques
+  "-sS", "-sT", "-sU", "-sV", "-sC", "-sA", "-sW",
+  // Port selection shorthands
+  "-F", "-p-", "-r",
+  // Detection
+  "-O", "-A",
+  // Output verbosity (structured output stays owned by this module)
+  "-v", "-vv", "--open", "--reason",
+  // Address family
+  "-4", "-6",
+]);
+
+// Flags that take a separate value argument, with the shape that value must have.
+const ALLOWED_VALUE_FLAGS = new Map([
+  ["-p", /^[\d,\-]{1,64}$/],
+  ["--top-ports", /^\d{1,5}$/],
+  ["--max-retries", /^\d{1,2}$/],
+  ["--host-timeout", /^\d{1,7}m?s?$/],
+]);
+
+// Combined forms such as "-p80,443" or "-p1-1000".
+const INLINE_PORT_FLAG = /^-p[\d,\-]{1,64}$/;
+
+/**
+ * Validates caller-supplied nmap flags against the allowlist.
+ *
+ * @param {string[]} flags
+ * @returns {string[]} the same flags, when every one is permitted
+ * @throws {Error} naming the first flag that is not
+ */
+function validateFlags(flags) {
+  if (!Array.isArray(flags)) return [];
+
+  for (let i = 0; i < flags.length; i += 1) {
+    const flag = flags[i];
+
+    if (typeof flag !== "string") {
+      throw new Error(`Disallowed nmap flag: expected a string, received ${typeof flag}`);
+    }
+
+    if (ALLOWED_FLAGS.has(flag) || INLINE_PORT_FLAG.test(flag)) continue;
+
+    if (ALLOWED_VALUE_FLAGS.has(flag)) {
+      const value = flags[i + 1];
+      const pattern = ALLOWED_VALUE_FLAGS.get(flag);
+
+      if (typeof value !== "string" || !pattern.test(value)) {
+        throw new Error(`Disallowed nmap flag: "${flag}" has a missing or invalid value`);
+      }
+
+      i += 1; // consume the value
+      continue;
+    }
+
+    throw new Error(`Disallowed nmap flag: "${flag}"`);
+  }
+
+  return flags;
+}
+
 /**
  * Executes `nmap -sV -oX - <target>` as a child process.
  *
@@ -33,7 +104,12 @@ function runNmapScan(target, options = {}) {
     }
 
     const timeout = options.timeout ?? DEFAULT_TIMEOUT_MS;
-    const extraFlags = Array.isArray(options.flags) ? options.flags : [];
+    let extraFlags;
+    try {
+      extraFlags = validateFlags(options.flags);
+    } catch (flagError) {
+      return reject(flagError);
+    }
 
     // ── Build args ───────────────────────────────────────────────────
     // -sV   : service/version detection
@@ -85,4 +161,4 @@ function runNmapScan(target, options = {}) {
   });
 }
 
-module.exports = { runNmapScan };
+module.exports = { runNmapScan, validateFlags, ALLOWED_FLAGS };

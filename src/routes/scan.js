@@ -108,6 +108,15 @@ router.post("/", async (req, res) => {
   } catch (err) {
     console.error(`[scan] Error: ${err.message}`);
 
+    // A rejected flag is the caller's fault, not the server's.
+    if (err.message.includes("Disallowed nmap flag")) {
+      return res.status(400).json({
+        status: 400,
+        error: err.message,
+        hint: "Only a fixed allowlist of nmap flags is accepted. See ALLOWED_FLAGS in src/services/scanner.js",
+      });
+    }
+
     // Distinguish between known error types
     if (err.message.includes("Failed to start nmap")) {
       return res.status(500).json({
