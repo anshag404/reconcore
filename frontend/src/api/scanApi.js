@@ -27,11 +27,82 @@ export class ScanRequestError extends Error {
   }
 }
 
-export function startScan({ target, flags }, { signal } = {}) {
-  // The API takes { target, flags, timeout, skipVulnLookup } — the UI's profile
-  // id is not part of that contract, only the flags it resolves to.
-  return request('/api/scan', { target, flags }, signal)
+export async function startScan({ target, flags }, { signal, onProgress } = {}) {
+  // 1. Start the scan (returns a jobId immediately)
+  const data = await request('/api/scan', { target, flags }, signal)
+  
+  if (!data || !data.jobId) {
+    throw new ScanRequestError('server', 'Server did not return a jobId')
+  }
+
+  const { jobId } = data;
+
+  // 2. Poll for results
+  return await pollJob(jobId, { signal, onProgress });
 }
+
+async function pollJob(jobId, { signal, onProgress } = {}) {
+  const pollIntervalMs = 2000; // poll every 2 seconds
+  const startTime = Date.now();
+
+  while (true) {
+    if (signal?.aborted) {
+      throw new ScanRequestError('aborted', 'Scan cancelled by user');
+    }
+
+    if (Date.now() - startTime > REQUEST_TIMEOUT_MS) {
+      throw new ScanRequestError('timeout', `Scan took longer than ${REQUEST_TIMEOUT_MS / 1000}s`);
+    }
+
+    let response;
+    try {
+      response = await fetch(`${API_BASE_URL}/api/scan/${jobId}`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        signal,
+      });
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        throw new ScanRequestError('aborted', 'Scan cancelled by user', { cause: error });
+      }
+      throw new ScanRequestError(
+        'network',
+        `Could not reach ${API_BASE_URL}. The server may be down, or rejecting this origin.`,
+        { cause: error },
+      );
+    }
+
+    if (!response.ok) {
+      const detail = await readError(response)
+      throw new ScanRequestError(
+        response.status === 404 ? 'not-found' : 'server',
+        detail ?? `Server responded ${response.status}.`,
+        { status: response.status },
+      )
+    }
+
+    let jobData;
+    try {
+      jobData = await response.json();
+    } catch (error) {
+      throw new ScanRequestError('parse', 'Server returned a response that was not valid JSON.', { cause: error })
+    }
+
+    if (onProgress) {
+      onProgress(jobData.jobStatus);
+    }
+
+    if (jobData.jobStatus === 'completed') {
+      return jobData.result;
+    } else if (jobData.jobStatus === 'failed') {
+      throw new ScanRequestError('server', jobData.error || 'Scan job failed');
+    }
+
+    // Wait before polling again
+    await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+  }
+}
+
 
 async function request(path, body, externalSignal) {
   const controller = new AbortController()
@@ -49,10 +120,6 @@ async function request(path, body, externalSignal) {
       signal: controller.signal,
     })
   } catch (error) {
-    // A browser will not tell JavaScript that a request was blocked by CORS —
-    // by design, a blocked response is indistinguishable from an unreachable
-    // host. Both land here as a TypeError, so report both possibilities rather
-    // than guessing at one.
     if (error.name === 'AbortError') {
       throw new ScanRequestError('timeout', `No response after ${REQUEST_TIMEOUT_MS / 1000}s.`, {
         cause: error,
@@ -68,7 +135,7 @@ async function request(path, body, externalSignal) {
     clearTimeout(timeout)
   }
 
-  if (!response.ok) {
+  if (!response.ok && response.status !== 202) { // Allow 202 Accepted
     const detail = await readError(response)
     throw new ScanRequestError(
       response.status === 404 ? 'not-found' : 'server',

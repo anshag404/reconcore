@@ -2,6 +2,7 @@ const { Router } = require("express");
 const { runNmapScan } = require("../services/scanner");
 const { parseNmapXml } = require("../services/parser");
 const { lookupScanVulns } = require("../services/vulnLookup");
+const jobManager = require("../services/jobManager");
 
 const router = Router();
 
@@ -10,17 +11,81 @@ const TARGET_REGEX =
   /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z]{2,}$|^(?:\d{1,3}\.){3}\d{1,3}(?:\/(?:3[0-2]|[12]?\d))?$|^[a-fA-F0-9:]+(?:\/(?:12[0-8]|1[01]\d|\d{1,2}))?$/;
 
 /**
- * POST /api/scan
- *
- * Body: { "target": "192.168.1.1" }
- * Optional: { "target": "...", "flags": ["-p", "80,443"], "timeout": 60000, "skipVulnLookup": false }
- *
- * Pipeline: nmap scan → XML parse → CVE enrichment → enriched JSON
+ * Helper to run the scan pipeline asynchronously
  */
-router.post("/", async (req, res) => {
+async function executeScanPipeline(jobId, target, flags, timeout, skipVulnLookup) {
   const startTime = Date.now();
+  try {
+    // 1. Scan
+    jobManager.updateJob(jobId, { status: "scanning" });
+    const scanOptions = {};
+    if (flags && Array.isArray(flags)) scanOptions.flags = flags;
+    if (timeout && typeof timeout === "number") scanOptions.timeout = timeout;
 
-  // ── 1. Validate input ──────────────────────────────────────────────
+    const nmapResult = await runNmapScan(target, scanOptions);
+    if (nmapResult.code !== 0 && !nmapResult.stdout) {
+      throw new Error(`Nmap failed: ${nmapResult.stderr || "No output"}`);
+    }
+
+    // 2. Parse
+    jobManager.updateJob(jobId, { status: "parsing" });
+    const parsedScan = await parseNmapXml(nmapResult.stdout);
+
+    if (!parsedScan.hosts || parsedScan.hosts.length === 0) {
+      jobManager.updateJob(jobId, {
+        status: "completed",
+        result: {
+          message: "Scan completed but no hosts were found (host may be down)",
+          scanInfo: parsedScan.scanInfo,
+          runStats: parsedScan.runStats,
+          hosts: [],
+          vulnerabilities: [],
+          meta: { target, duration: Date.now() - startTime },
+        },
+      });
+      return;
+    }
+
+    // 3. Enrich
+    let vulnerabilities = [];
+    if (!skipVulnLookup) {
+      jobManager.updateJob(jobId, { status: "enriching" });
+      try {
+        vulnerabilities = await lookupScanVulns(parsedScan);
+      } catch (vulnErr) {
+        console.error(`[scan] CVE lookup failed for job ${jobId}: ${vulnErr.message}`);
+        vulnerabilities = [{ error: "CVE lookup failed", message: vulnErr.message }];
+      }
+    }
+
+    // 4. Complete
+    const duration = Date.now() - startTime;
+    jobManager.updateJob(jobId, {
+      status: "completed",
+      result: {
+        scanInfo: parsedScan.scanInfo,
+        runStats: parsedScan.runStats,
+        hosts: parsedScan.hosts,
+        vulnerabilities,
+        meta: {
+          target,
+          duration,
+          nmapExitCode: nmapResult.code,
+          nmapWarnings: nmapResult.stderr || null,
+        },
+      },
+    });
+  } catch (err) {
+    console.error(`[scan] Job ${jobId} failed: ${err.message}`);
+    jobManager.updateJob(jobId, { status: "failed", error: err.message });
+  }
+}
+
+/**
+ * POST /api/scan
+ * Triggers an async scan and returns a Job ID.
+ */
+router.post("/", (req, res) => {
   const { target, flags, timeout, skipVulnLookup } = req.body;
 
   if (!target || typeof target !== "string") {
@@ -39,107 +104,41 @@ router.post("/", async (req, res) => {
     });
   }
 
-  try {
-    // ── 2. Run Nmap scan ─────────────────────────────────────────────
-    console.log(`[scan] Starting scan for: ${sanitizedTarget}`);
+  // Create job
+  const jobId = jobManager.createJob(sanitizedTarget);
 
-    const scanOptions = {};
-    if (flags && Array.isArray(flags)) scanOptions.flags = flags;
-    if (timeout && typeof timeout === "number") scanOptions.timeout = timeout;
+  // Start background pipeline (fire and forget)
+  executeScanPipeline(jobId, sanitizedTarget, flags, timeout, skipVulnLookup);
 
-    const nmapResult = await runNmapScan(sanitizedTarget, scanOptions);
+  return res.status(202).json({
+    status: 202,
+    message: "Scan job created successfully",
+    jobId,
+  });
+});
 
-    if (nmapResult.code !== 0 && !nmapResult.stdout) {
-      return res.status(500).json({
-        status: 500,
-        error: "Nmap scan failed",
-        details: nmapResult.stderr || "No output received from nmap",
-      });
-    }
-
-    // ── 3. Parse XML → JSON ──────────────────────────────────────────
-    const parsedScan = await parseNmapXml(nmapResult.stdout);
-
-    if (!parsedScan.hosts || parsedScan.hosts.length === 0) {
-      return res.status(200).json({
-        status: 200,
-        message: "Scan completed but no hosts were found (host may be down)",
-        scanInfo: parsedScan.scanInfo,
-        runStats: parsedScan.runStats,
-        hosts: [],
-        vulnerabilities: [],
-        meta: {
-          target: sanitizedTarget,
-          duration: Date.now() - startTime,
-        },
-      });
-    }
-
-    // ── 4. CVE enrichment (optional) ─────────────────────────────────
-    let vulnerabilities = [];
-    if (!skipVulnLookup) {
-      console.log(`[scan] Querying NVD for vulnerabilities...`);
-      try {
-        vulnerabilities = await lookupScanVulns(parsedScan);
-      } catch (vulnErr) {
-        // Non-fatal — return scan results even if CVE lookup fails
-        console.error(`[scan] CVE lookup failed: ${vulnErr.message}`);
-        vulnerabilities = [{ error: "CVE lookup failed", message: vulnErr.message }];
-      }
-    }
-
-    // ── 5. Build enriched response ───────────────────────────────────
-    const duration = Date.now() - startTime;
-    console.log(`[scan] Completed for ${sanitizedTarget} in ${duration}ms`);
-
-    return res.status(200).json({
-      status: 200,
-      scanInfo: parsedScan.scanInfo,
-      runStats: parsedScan.runStats,
-      hosts: parsedScan.hosts,
-      vulnerabilities,
-      meta: {
-        target: sanitizedTarget,
-        duration,
-        nmapExitCode: nmapResult.code,
-        nmapWarnings: nmapResult.stderr || null,
-      },
-    });
-  } catch (err) {
-    console.error(`[scan] Error: ${err.message}`);
-
-    // A rejected flag is the caller's fault, not the server's.
-    if (err.message.includes("Disallowed nmap flag")) {
-      return res.status(400).json({
-        status: 400,
-        error: err.message,
-        hint: "Only a fixed allowlist of nmap flags is accepted. See ALLOWED_FLAGS in src/services/scanner.js",
-      });
-    }
-
-    // Distinguish between known error types
-    if (err.message.includes("Failed to start nmap")) {
-      return res.status(500).json({
-        status: 500,
-        error: "Nmap is not installed or not on PATH",
-        details: err.message,
-      });
-    }
-
-    if (err.message.includes("timed out")) {
-      return res.status(504).json({
-        status: 504,
-        error: "Scan timed out",
-        details: err.message,
-      });
-    }
-
-    return res.status(500).json({
-      status: 500,
-      error: "Internal server error",
-      details: process.env.NODE_ENV !== "production" ? err.message : undefined,
+/**
+ * GET /api/scan/:jobId
+ * Retrieves the status and/or result of a scan job.
+ */
+router.get("/:jobId", (req, res) => {
+  const job = jobManager.getJob(req.params.jobId);
+  if (!job) {
+    return res.status(404).json({
+      status: 404,
+      error: "Job not found",
     });
   }
+
+  return res.status(200).json({
+    status: 200,
+    jobId: job.id,
+    target: job.target,
+    jobStatus: job.status, // pending, scanning, parsing, enriching, completed, failed
+    result: job.result,
+    error: job.error,
+    createdAt: job.createdAt,
+  });
 });
 
 module.exports = router;
