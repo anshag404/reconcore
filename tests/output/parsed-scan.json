@@ -1,0 +1,169 @@
+{
+  "scanInfo": {
+    "scanner": "nmap",
+    "args": "nmap -sV -O -oX - scanme.nmap.org",
+    "startTime": "2026-09-05T20:33:51.000Z",
+    "version": "7.991"
+  },
+  "runStats": {
+    "elapsed": 23.91,
+    "summary": "Nmap done at Sun Sep  6 02:04:15 2026; 1 IP address (1 host up) scanned in 23.91 seconds",
+    "endTime": "2026-09-05T20:34:15.000Z",
+    "hostsUp": 1,
+    "hostsDown": 0,
+    "hostsTotal": 1
+  },
+  "hosts": [
+    {
+      "status": {
+        "state": "up",
+        "reason": "reset"
+      },
+      "addresses": [
+        {
+          "addr": "45.33.32.156",
+          "type": "ipv4",
+          "vendor": null
+        },
+        {
+          "addr": "00:1A:2B:3C:4D:5E",
+          "type": "mac",
+          "vendor": "Cisco Systems"
+        }
+      ],
+      "hostnames": [
+        {
+          "name": "scanme.nmap.org",
+          "type": "user"
+        },
+        {
+          "name": "scanme.nmap.org",
+          "type": "PTR"
+        }
+      ],
+      "ports": [
+        {
+          "portId": 22,
+          "protocol": "tcp",
+          "state": {
+            "state": "open",
+            "reason": "syn-ack"
+          },
+          "service": {
+            "name": "ssh",
+            "product": "OpenSSH",
+            "version": "6.6.1p1",
+            "extraInfo": "Ubuntu Linux; protocol 2.0",
+            "osType": "Linux",
+            "method": "probed",
+            "confidence": 10,
+            "cpe": [
+              "cpe:/a:openbsd:openssh:6.6.1p1",
+              "cpe:/o:linux:linux_kernel"
+            ]
+          }
+        },
+        {
+          "portId": 80,
+          "protocol": "tcp",
+          "state": {
+            "state": "open",
+            "reason": "syn-ack"
+          },
+          "service": {
+            "name": "http",
+            "product": "Apache httpd",
+            "version": "2.4.7",
+            "extraInfo": "(Ubuntu)",
+            "osType": null,
+            "method": "probed",
+            "confidence": 10,
+            "cpe": [
+              "cpe:/a:apache:http_server:2.4.7"
+            ]
+          }
+        },
+        {
+          "portId": 25,
+          "protocol": "tcp",
+          "state": {
+            "state": "filtered",
+            "reason": "no-response"
+          },
+          "service": {
+            "name": "smtp",
+            "product": null,
+            "version": null,
+            "extraInfo": null,
+            "osType": null,
+            "method": "table",
+            "confidence": 3,
+            "cpe": null
+          }
+        },
+        {
+          "portId": 9929,
+          "protocol": "tcp",
+          "state": {
+            "state": "open",
+            "reason": "syn-ack"
+          },
+          "service": {
+            "name": "nping-echo",
+            "product": "Nping echo",
+            "version": null,
+            "extraInfo": null,
+            "osType": null,
+            "method": "probed",
+            "confidence": 10,
+            "cpe": null
+          }
+        }
+      ],
+      "os": [
+        {
+          "name": "Linux 3.2 - 4.9",
+          "accuracy": 95,
+          "classes": [
+            {
+              "type": "general purpose",
+              "vendor": "Linux",
+              "family": "Linux",
+              "generation": "3.X",
+              "accuracy": 95,
+              "cpe": [
+                "cpe:/o:linux:linux_kernel:3"
+              ]
+            },
+            {
+              "type": "general purpose",
+              "vendor": "Linux",
+              "family": "Linux",
+              "generation": "4.X",
+              "accuracy": 95,
+              "cpe": [
+                "cpe:/o:linux:linux_kernel:4"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Linux 3.10",
+          "accuracy": 90,
+          "classes": [
+            {
+              "type": "general purpose",
+              "vendor": "Linux",
+              "family": "Linux",
+              "generation": "3.X",
+              "accuracy": 90,
+              "cpe": [
+                "cpe:/o:linux:linux_kernel:3.10"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
