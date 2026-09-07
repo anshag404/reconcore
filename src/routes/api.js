@@ -17,8 +17,8 @@ router.get("/", (_req, res) => {
     version: "1.0.0",
     description: "Network reconnaissance and security scanning API",
     endpoints: {
-      health: "/api/health",
-      // scan endpoints will be added here
+      health: "GET /api/health",
+      scan: "POST /api/scan",
     },
   });
 });

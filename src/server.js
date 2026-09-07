@@ -2,6 +2,7 @@ const express = require("express");
 const config = require("./config");
 const applyMiddleware = require("./middleware/security");
 const apiRoutes = require("./routes/api");
+const scanRoutes = require("./routes/scan");
 
 // ── Bootstrap ────────────────────────────────────────────────────────
 const app = express();
@@ -11,6 +12,7 @@ applyMiddleware(app);
 
 // Mount routes
 app.use("/api", apiRoutes);
+app.use("/api/scan", scanRoutes);
 
 // ── 404 handler ──────────────────────────────────────────────────────
 app.use((_req, res) => {
@@ -39,6 +41,7 @@ app.listen(config.port, () => {
   ║  Port    : ${String(config.port).padEnd(29)}║
   ║  Env     : ${config.nodeEnv.padEnd(29)}║
   ║  Health  : /api/health                  ║
+  ║  Scan    : POST /api/scan               ║
   ╚══════════════════════════════════════════╝
   `);
 });
