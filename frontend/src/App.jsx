@@ -1,6 +1,11 @@
 import { useState } from 'react'
+import Dashboard from './components/Dashboard'
 import ScanConfiguration from './components/ScanConfiguration'
 import TopologyMap from './components/TopologyMap'
+import Vulnerabilities from './components/Vulnerabilities'
+import Reports from './components/Reports'
+import Settings from './components/Settings'
+import { adaptScanResult } from './data/adaptScanResult'
 
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard' },
@@ -13,6 +18,7 @@ const NAV_ITEMS = [
 
 function App() {
   const [activeNav, setActiveNav] = useState('dashboard')
+  const [scanResult, setScanResult] = useState(null)
 
   return (
     <div className="flex h-full min-h-screen bg-[#0b1220] text-gray-200">
@@ -69,24 +75,30 @@ function App() {
 
         <main className="flex-1 overflow-auto p-4 sm:p-6">
           <section className="mx-auto max-w-5xl">
-            <h3 className="text-2xl font-semibold tracking-tight text-white">
-              {NAV_ITEMS.find((item) => item.id === activeNav)?.label}
-            </h3>
-            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-400">
-              Main content area for the ReconCore dashboard. Wire scan results,
-              asset inventory, and vulnerability findings into this panel.
-            </p>
+
 
             <div className="mt-8">
-              {activeNav === 'scans' && <ScanConfiguration />}
-              {activeNav === 'assets' && <TopologyMap />}
-              {activeNav !== 'scans' && activeNav !== 'assets' && (
-                <div className="rounded-lg border border-slate-800 bg-[#111827] p-6">
-                  <p className="text-sm text-slate-300">
-                    Placeholder panel — replace with live data views for{' '}
-                    <span className="font-medium text-white">{activeNav}</span>.
-                  </p>
-                </div>
+              {activeNav === 'dashboard' && (
+                <Dashboard data={scanResult} onNavigate={setActiveNav} />
+              )}
+              {activeNav === 'scans' && (
+                <ScanConfiguration onScanComplete={setScanResult} />
+              )}
+              {activeNav === 'assets' && (
+                scanResult ? (
+                  <TopologyMap data={adaptScanResult(scanResult)} />
+                ) : (
+                  <TopologyMap /> // Renders mock data by default
+                )
+              )}
+              {activeNav === 'vulnerabilities' && (
+                <Vulnerabilities data={scanResult} />
+              )}
+              {activeNav === 'reports' && (
+                <Reports data={scanResult} />
+              )}
+              {activeNav === 'settings' && (
+                <Settings />
               )}
             </div>
           </section>
