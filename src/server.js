@@ -14,9 +14,20 @@ applyMiddleware(app);
 app.use("/api", apiRoutes);
 app.use("/api/scan", scanRoutes);
 
-// ── 404 handler ──────────────────────────────────────────────────────
-app.use((_req, res) => {
-  res.status(404).json({ status: 404, error: "Route not found" });
+const path = require("path");
+
+// ── 404 handler for API routes ───────────────────────────────────────
+app.use("/api", (_req, res) => {
+  res.status(404).json({ status: 404, error: "API Route not found" });
+});
+
+// ── Serve Frontend SPA ───────────────────────────────────────────────
+// In production (or Docker), serve the built React app
+const frontendDistPath = path.join(__dirname, "../frontend/dist");
+app.use(express.static(frontendDistPath));
+
+app.get("*", (req, res) => {
+  res.sendFile(path.join(frontendDistPath, "index.html"));
 });
 
 // ── Global error handler ─────────────────────────────────────────────

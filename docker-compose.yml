@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  reconcore:
+    build: .
+    container_name: reconcore
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      # Optional: Add your NVD API Key here
+      # - NVD_API_KEY=your_key_here
+    restart: unless-stopped
