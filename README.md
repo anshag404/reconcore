@@ -18,52 +18,50 @@ ReconCore is built on a split architecture separating the presentation layer fro
 
 ## Setup Instructions
 
-### Prerequisites
-- **Node.js** (v18+)
-- **Nmap**: Must be installed and accessible in your system's PATH. (On Windows, installing Nmap with Npcap is recommended).
+### Option A: Running with Docker (Recommended)
+This is the easiest way to run ReconCore. It automatically bundles the Node.js backend, the built React frontend, and the required Nmap binaries into an isolated container.
 
-### Installation
+**Prerequisites:**
+- **Docker** and **Docker Compose**
 
-1. **Clone the repository** (if you haven't already).
-2. **Install Backend Dependencies**:
+1. **Clone the repository**:
    ```bash
+   git clone https://github.com/anshag404/reconcore.git
    cd reconcore
-   npm install
    ```
-3. **Install Frontend Dependencies**:
+2. **(Optional) Add NVD API Key**:
+   Create a `.env` file in the root directory to increase CVE lookup rate limits:
+   ```env
+   NVD_API_KEY=your_key_here
+   ```
+3. **Build and Start**:
    ```bash
-   cd reconcore/frontend
+   docker-compose up --build
+   ```
+Navigate to `http://localhost:3000` in your browser.
+
+### Option B: Local Development
+If you want to modify the code and run the split frontend/backend architecture locally:
+
+**Prerequisites:**
+- **Node.js** (v18+)
+- **Nmap**: Must be installed on your host machine and accessible in your PATH.
+
+1. **Install Backend Dependencies**:
+   ```bash
    npm install
    ```
-4. **Environment Variables**:
-   In the root of `reconcore`, create a `.env` file:
-   ```env
-   PORT=3000
-   # Optional: Add your NVD API key to increase rate limits (from 5 to 50 req/30s)
-   NVD_API_KEY=your_nvd_api_key_here
+2. **Install Frontend Dependencies**:
+   ```bash
+   cd frontend
+   npm install
    ```
-   In the `reconcore/frontend` directory, create a `.env` file:
-   ```env
-   VITE_API_BASE_URL=http://localhost:3000
-   ```
-
-### Running the Application
-
-Open two terminal windows.
-
-**Terminal 1 (Backend):**
-```bash
-cd reconcore
-npm run dev
-```
-
-**Terminal 2 (Frontend):**
-```bash
-cd reconcore/frontend
-npm run dev
-```
-
-Navigate to `http://localhost:5173` in your browser to access the ReconCore Command Center.
+3. **Run the Application**:
+   Open two terminal windows:
+   - Terminal 1 (Backend): `npm run dev` (from root directory)
+   - Terminal 2 (Frontend): `npm run dev` (from `frontend/` directory)
+   
+Navigate to `http://localhost:5173` in your browser.
 
 ---
 
