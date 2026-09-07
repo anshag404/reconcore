@@ -5,25 +5,25 @@ const SCAN_PROFILES = [
   {
     id: 'fast',
     label: 'Fast',
-    tagline: 'Top 100 ports',
-    description: 'Quick sweep of the most common ports. Loud but done in seconds.',
-    flags: ['-T4', '-F'],
+    tagline: 'Top 100 ports + OS/Service',
+    description: 'Quick sweep of the most common ports with version and OS detection.',
+    flags: ['-T4', '-F', '-sV', '-O'],
     accent: 'text-emerald-400',
   },
   {
     id: 'detailed',
     label: 'Detailed',
-    tagline: 'Full port + version',
-    description: 'All 65535 ports with service/version detection. Slow and thorough.',
-    flags: ['-T4', '-p-', '-sV', '-sC'],
+    tagline: 'Full port + OS/Service',
+    description: 'All 65535 ports with full OS, service version, and default scripts.',
+    flags: ['-T4', '-p-', '-sV', '-sC', '-O'],
     accent: 'text-amber-400',
   },
   {
     id: 'stealth',
     label: 'Stealth',
-    tagline: 'SYN, low & slow',
-    description: 'Half-open SYN scan with throttled timing to stay under IDS thresholds.',
-    flags: ['-T2', '-sS', '-Pn'],
+    tagline: 'SYN, slow + OS/Service',
+    description: 'Half-open SYN scan with throttled timing, plus OS and service detection.',
+    flags: ['-T2', '-sS', '-Pn', '-sV', '-O'],
     accent: 'text-sky-400',
   },
 ]
@@ -61,6 +61,7 @@ function ScanConfiguration({ onScanComplete }) {
   const [status, setStatus] = useState('idle') // idle | loading | success | error
   const [requestError, setRequestError] = useState(null)
   const [result, setResult] = useState(null)
+  const [scanProgress, setScanProgress] = useState(null)
 
   // Cancel an in-flight scan if the component goes away mid-request.
   const abortRef = useRef(null)
@@ -84,21 +85,27 @@ function ScanConfiguration({ onScanComplete }) {
     setStatus('loading')
     setRequestError(null)
     setResult(null)
+    setScanProgress('dispatching')
 
     try {
       const data = await startScan(
         { target: target.trim(), profile: profile.id, flags: profile.flags },
-        { signal: controller.signal },
+        { 
+          signal: controller.signal,
+          onProgress: (phase) => setScanProgress(phase)
+        },
       )
 
       setStatus('success')
       setResult(data)
+      setScanProgress(null)
       onScanComplete?.(data)
     } catch (caught) {
       // An aborted request is a deliberate cancellation, not a failure.
       if (controller.signal.aborted && caught.kind !== 'timeout') return
 
       setStatus('error')
+      setScanProgress(null)
       setRequestError(
         caught instanceof ScanRequestError
           ? caught
@@ -269,7 +276,11 @@ function ScanConfiguration({ onScanComplete }) {
                 aria-hidden="true"
                 className="h-3 w-3 animate-spin rounded-full border-2 border-slate-700 border-t-emerald-400"
               />
-              Dispatching scan to {API_BASE_URL} …
+              {scanProgress === 'dispatching' && `Dispatching scan to ${API_BASE_URL} …`}
+              {scanProgress === 'pending' && `Scan queued…`}
+              {scanProgress === 'scanning' && `Running Nmap scan…`}
+              {scanProgress === 'parsing' && `Parsing results…`}
+              {scanProgress === 'enriching' && `Querying NVD for CVEs…`}
             </p>
           )}
 
@@ -295,11 +306,44 @@ function ScanConfiguration({ onScanComplete }) {
           )}
 
           {status === 'success' && result && (
-            <div className="rounded-md border border-emerald-500/40 bg-emerald-500/5 p-3">
-              <p className="text-xs font-semibold text-emerald-400">Scan accepted</p>
-              <pre className="mt-1.5 max-h-40 overflow-auto text-[11px] leading-relaxed text-slate-400">
-                {JSON.stringify(result, null, 2)}
-              </pre>
+            <div className="rounded-md border border-emerald-500/40 bg-emerald-500/5 p-4">
+              <div className="flex items-center gap-2">
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400">
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                </span>
+                <p className="text-sm font-semibold text-emerald-400">Scan Completed Successfully</p>
+              </div>
+              
+              <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
+                <div className="rounded bg-[#080e1a] p-3 border border-slate-800">
+                  <p className="text-[10px] uppercase tracking-wider text-slate-500">Target</p>
+                  <p className="mt-1 font-semibold text-slate-200 truncate">{result.meta?.target || target}</p>
+                </div>
+                <div className="rounded bg-[#080e1a] p-3 border border-slate-800">
+                  <p className="text-[10px] uppercase tracking-wider text-slate-500">Hosts Up</p>
+                  <p className="mt-1 font-semibold text-slate-200">{result.runStats?.hostsUp ?? 0}</p>
+                </div>
+                <div className="rounded bg-[#080e1a] p-3 border border-slate-800">
+                  <p className="text-[10px] uppercase tracking-wider text-slate-500">Duration</p>
+                  <p className="mt-1 font-semibold text-slate-200">
+                    {result.runStats?.elapsed ? `${result.runStats.elapsed}s` : '—'}
+                  </p>
+                </div>
+                <div className="rounded bg-[#080e1a] p-3 border border-slate-800">
+                  <p className="text-[10px] uppercase tracking-wider text-slate-500">Vulnerabilities</p>
+                  <p className="mt-1 font-semibold text-slate-200">
+                    {result.vulnerabilities?.reduce((sum, v) => sum + (v.vulnerabilities?.length || 0), 0) || 0}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 flex items-center justify-between border-t border-emerald-500/10 pt-3">
+                <p className="text-xs text-slate-400">
+                  View the detailed network map and full CVE list in the sidebar.
+                </p>
+              </div>
             </div>
           )}
         </div>
