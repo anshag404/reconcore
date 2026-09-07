@@ -7,22 +7,35 @@ import parsedScan from '../../../tests/output/parsed-scan.json'
 
 const scanTopology = adaptScanResult(parsedScan)
 
-// CVSS v3 qualitative severity bands.
-const SEVERITY_BANDS = [
-  { label: 'Critical', min: 9.0, color: '#ef4444' },
-  { label: 'High', min: 7.0, color: '#f97316' },
-  { label: 'Medium', min: 4.0, color: '#eab308' },
-  { label: 'Low', min: 0.1, color: '#38bdf8' },
-  { label: 'None', min: 0, color: '#64748b' },
-]
+// Risk bands. 7.0 itself counts as High under CVSS v3, so the red band is
+// inclusive of it — "above 7.0" and the High/Critical label disagree at exactly
+// 7.0, and matching the standard is the safer reading for a security tool.
+const RISK = {
+  high: { key: 'high', label: 'High / Critical (≥ 7.0)', color: '#ef4444' },
+  low: { key: 'low', label: 'Low / Medium (< 7.0)', color: '#eab308' },
+  clean: { key: 'clean', label: 'No vulnerabilities', color: '#22c55e' },
+}
 
-function severityFor(score) {
-  return SEVERITY_BANDS.find((band) => score >= band.min) ?? SEVERITY_BANDS.at(-1)
+const RISK_LEGEND = [RISK.high, RISK.low, RISK.clean]
+
+/** A host with no CVEs is clean; otherwise its worst score picks the band. */
+function riskFor(node) {
+  if (!node.cves?.length) return RISK.clean
+
+  return (node.maxCvss ?? 0) >= 7.0 ? RISK.high : RISK.low
 }
 
 // Higher CVSS draws a bigger node, clamped so low-risk hosts stay visible.
 function radiusFor(score) {
   return 5 + (score / 10) * 7
+}
+
+// Pulse period for high-risk nodes, in milliseconds.
+const PULSE_MS = 1600
+
+/** CVSS is conventionally written to one decimal — 10 should read as 10.0. */
+function formatScore(score) {
+  return typeof score === 'number' ? score.toFixed(1) : '—'
 }
 
 function TopologyMap({ data = scanTopology }) {
@@ -31,6 +44,24 @@ function TopologyMap({ data = scanTopology }) {
   const [size, setSize] = useState({ width: 0, height: 460 })
   const [selected, setSelected] = useState(null)
   const [hovered, setHovered] = useState(null)
+  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 })
+
+  // The canvas reports which node is hovered but not where the cursor is, so
+  // track the pointer separately and pair the two when the tooltip renders.
+  const pointerRef = useRef({ x: 0, y: 0 })
+
+  const handlePointerMove = useCallback((event) => {
+    const bounds = event.currentTarget.getBoundingClientRect()
+    pointerRef.current = {
+      x: event.clientX - bounds.left,
+      y: event.clientY - bounds.top,
+    }
+  }, [])
+
+  const handleNodeHover = useCallback((node) => {
+    setHovered(node)
+    if (node) setTooltipPos(pointerRef.current)
+  }, [])
 
   // react-force-graph mutates the graph it is given (adds x/y/vx/vy and swaps
   // link endpoints for node refs), so hand it a clone and keep `data` pristine.
@@ -60,9 +91,26 @@ function TopologyMap({ data = scanTopology }) {
   const drawNode = useCallback(
     (node, ctx, globalScale) => {
       const score = node.maxCvss ?? 0
-      const { color } = severityFor(score)
+      const risk = riskFor(node)
+      const { color } = risk
       const radius = radiusFor(score)
       const isActive = selected?.id === node.id || hovered?.id === node.id
+
+      // High-risk hosts pulse: an expanding ring that fades as it grows, so the
+      // eye is drawn to them without the node itself changing size.
+      if (risk.key === 'high') {
+        const phase = ((Date.now() % PULSE_MS) / PULSE_MS)
+        const ringRadius = radius + phase * 14
+        const alpha = Math.round((1 - phase) * 140)
+          .toString(16)
+          .padStart(2, '0')
+
+        ctx.beginPath()
+        ctx.arc(node.x, node.y, ringRadius, 0, 2 * Math.PI)
+        ctx.lineWidth = 2 / globalScale
+        ctx.strokeStyle = `${color}${alpha}`
+        ctx.stroke()
+      }
 
       // Halo on the active node.
       if (isActive) {
@@ -154,7 +202,8 @@ function TopologyMap({ data = scanTopology }) {
             )}
             {totalCves === 0 && (
               <p className="mt-1 text-xs text-amber-500/80">
-                No CVE data in this scan — every host renders at severity “None”.
+                No CVE data in this scan — every host renders green, which means
+                “nothing found”, not “verified clean”.
               </p>
             )}
           </div>
@@ -170,8 +219,8 @@ function TopologyMap({ data = scanTopology }) {
 
         {/* Legend */}
         <ul className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
-          {SEVERITY_BANDS.map((band) => (
-            <li key={band.label} className="flex items-center gap-1.5 text-[11px] text-slate-500">
+          {RISK_LEGEND.map((band) => (
+            <li key={band.key} className="flex items-center gap-1.5 text-[11px] text-slate-500">
               <span
                 aria-hidden="true"
                 className="h-2.5 w-2.5 rounded-full"
@@ -186,7 +235,8 @@ function TopologyMap({ data = scanTopology }) {
           {/* Canvas */}
           <div
             ref={containerRef}
-            className="min-w-0 overflow-hidden rounded-md border border-slate-800 bg-[#080e1a]"
+            onMouseMove={handlePointerMove}
+            className="relative min-w-0 overflow-hidden rounded-md border border-slate-800 bg-[#080e1a]"
             style={{ height: size.height }}
           >
             {size.width > 0 && (
@@ -199,18 +249,63 @@ function TopologyMap({ data = scanTopology }) {
                 nodeRelSize={6}
                 nodeCanvasObject={drawNode}
                 nodePointerAreaPaint={drawNodePointerArea}
-                nodeLabel={(node) => `${node.id} — ${node.hostname}`}
+                nodeLabel={() => ''}
                 linkColor={() => '#475569'}
                 linkWidth={1.5}
                 linkDirectionalParticles={2}
                 linkDirectionalParticleWidth={2}
                 linkDirectionalParticleColor={() => '#22d3ee'}
                 onNodeClick={(node) => setSelected(node)}
-                onNodeHover={(node) => setHovered(node)}
+                onNodeHover={handleNodeHover}
                 onBackgroundClick={() => setSelected(null)}
                 cooldownTicks={100}
                 onEngineStop={handleFit}
               />
+            )}
+
+            {/* Hover tooltip — IP plus the CVE IDs on that host. */}
+            {hovered && (
+              <div
+                role="tooltip"
+                className="pointer-events-none absolute z-10 max-w-[220px] rounded-md border border-slate-700 bg-[#0b1220]/95 px-2.5 py-2 shadow-lg shadow-black/50"
+                style={{
+                  // Flip to the other side of the cursor near the right/bottom
+                  // edge so the tooltip never spills out of the canvas.
+                  left: tooltipPos.x > size.width - 240 ? undefined : tooltipPos.x + 14,
+                  right:
+                    tooltipPos.x > size.width - 240 ? size.width - tooltipPos.x + 14 : undefined,
+                  top: tooltipPos.y > size.height - 120 ? undefined : tooltipPos.y + 14,
+                  bottom:
+                    tooltipPos.y > size.height - 120 ? size.height - tooltipPos.y + 14 : undefined,
+                }}
+              >
+                <p className="text-xs font-semibold text-slate-100">{hovered.id}</p>
+                {hovered.hostname && (
+                  <p className="mt-0.5 text-[11px] text-slate-500">{hovered.hostname}</p>
+                )}
+
+                {hovered.cves?.length ? (
+                  <ul className="mt-1.5 space-y-0.5">
+                    {hovered.cves.slice(0, 4).map((cve) => (
+                      <li key={cve.cveId} className="text-[11px] leading-snug">
+                        <span className="break-all text-slate-300">{cve.cveId}</span>{' '}
+                        <span
+                          style={{ color: cve.score >= 7.0 ? RISK.high.color : RISK.low.color }}
+                        >
+                          {formatScore(cve.score)}
+                        </span>
+                      </li>
+                    ))}
+                    {hovered.cves.length > 4 && (
+                      <li className="text-[11px] text-slate-600">
+                        +{hovered.cves.length - 4} more
+                      </li>
+                    )}
+                  </ul>
+                ) : (
+                  <p className="mt-1.5 text-[11px] text-emerald-400">No known CVEs</p>
+                )}
+              </div>
             )}
           </div>
 
@@ -246,7 +341,11 @@ function TopologyMap({ data = scanTopology }) {
                     selected.cves.map((cve) => (
                       <li key={cve.cveId} className="text-xs">
                         <span className="break-all text-slate-300">{cve.cveId}</span>{' '}
-                        <span style={{ color: severityFor(cve.score).color }}>{cve.score}</span>
+                        <span
+                          style={{ color: cve.score >= 7.0 ? RISK.high.color : RISK.low.color }}
+                        >
+                          {formatScore(cve.score)}
+                        </span>
                       </li>
                     ))
                   ) : (
