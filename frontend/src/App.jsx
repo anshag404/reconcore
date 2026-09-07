@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import ScanConfiguration from './components/ScanConfiguration'
+import TopologyMap from './components/TopologyMap'
 
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard' },
@@ -77,9 +78,9 @@ function App() {
             </p>
 
             <div className="mt-8">
-              {activeNav === 'scans' ? (
-                <ScanConfiguration />
-              ) : (
+              {activeNav === 'scans' && <ScanConfiguration />}
+              {activeNav === 'assets' && <TopologyMap />}
+              {activeNav !== 'scans' && activeNav !== 'assets' && (
                 <div className="rounded-lg border border-slate-800 bg-[#111827] p-6">
                   <p className="text-sm text-slate-300">
                     Placeholder panel — replace with live data views for{' '}
