@@ -3,7 +3,7 @@ const { spawn } = require("child_process");
 // ── Input validation ─────────────────────────────────────────────────
 // Strict whitelist: IPv4, IPv6, or hostname only. Prevents command injection.
 const TARGET_REGEX =
-  /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z]{2,}$|^(?:\d{1,3}\.){3}\d{1,3}$|^[a-fA-F0-9:]+$/;
+  /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z]{2,}$|^(?:\d{1,3}\.){3}\d{1,3}(?:\/(?:3[0-2]|[12]?\d))?$|^[a-fA-F0-9:]+(?:\/(?:12[0-8]|1[01]\d|\d{1,2}))?$/;
 
 const DEFAULT_TIMEOUT_MS = 120_000; // 2 minutes
 

@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { startScan, ScanRequestError, API_BASE_URL } from '../api/scanApi'
 
 const SCAN_PROFILES = [
   {
@@ -44,27 +45,66 @@ function validateTarget(value) {
   return null
 }
 
-function ScanConfiguration() {
+const ERROR_TITLES = {
+  network: 'Cannot reach the API',
+  timeout: 'Request timed out',
+  'not-found': 'Endpoint not found',
+  server: 'Server error',
+  parse: 'Malformed response',
+  unknown: 'Scan failed',
+}
+
+function ScanConfiguration({ onScanComplete }) {
   const [target, setTarget] = useState('')
   const [profileId, setProfileId] = useState('fast')
   const [error, setError] = useState(null)
+  const [status, setStatus] = useState('idle') // idle | loading | success | error
+  const [requestError, setRequestError] = useState(null)
+  const [result, setResult] = useState(null)
+
+  // Cancel an in-flight scan if the component goes away mid-request.
+  const abortRef = useRef(null)
+  useEffect(() => () => abortRef.current?.abort(), [])
 
   const profile = SCAN_PROFILES.find((item) => item.id === profileId)
+  const isLoading = status === 'loading'
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault()
+    if (isLoading) return
 
     const validationError = validateTarget(target)
     setError(validationError)
     if (validationError) return
 
-    // Mock submit — replace with a POST to the scan API.
-    console.log('[ReconCore] Start scan', {
-      target: target.trim(),
-      profile: profile.id,
-      flags: profile.flags,
-      startedAt: new Date().toISOString(),
-    })
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
+    setStatus('loading')
+    setRequestError(null)
+    setResult(null)
+
+    try {
+      const data = await startScan(
+        { target: target.trim(), profile: profile.id, flags: profile.flags },
+        { signal: controller.signal },
+      )
+
+      setStatus('success')
+      setResult(data)
+      onScanComplete?.(data)
+    } catch (caught) {
+      // An aborted request is a deliberate cancellation, not a failure.
+      if (controller.signal.aborted && caught.kind !== 'timeout') return
+
+      setStatus('error')
+      setRequestError(
+        caught instanceof ScanRequestError
+          ? caught
+          : new ScanRequestError('unknown', caught.message ?? 'Unexpected error.'),
+      )
+    }
   }
 
   return (
@@ -207,10 +247,61 @@ function ScanConfiguration() {
 
           <button
             type="submit"
-            className="w-full shrink-0 rounded-md bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-slate-950 transition-colors hover:bg-emerald-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0d1526] sm:w-auto"
+            disabled={isLoading}
+            aria-busy={isLoading}
+            className="flex w-full shrink-0 items-center justify-center gap-2 rounded-md bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-slate-950 transition-colors hover:bg-emerald-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0d1526] disabled:cursor-not-allowed disabled:bg-emerald-600/50 disabled:text-slate-950/70 sm:w-auto"
           >
-            Start Scan
+            {isLoading && (
+              <span
+                aria-hidden="true"
+                className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-950/30 border-t-slate-950"
+              />
+            )}
+            {isLoading ? 'Scanning…' : 'Start Scan'}
           </button>
+        </div>
+
+        {/* Request outcome */}
+        <div aria-live="polite" aria-atomic="true">
+          {isLoading && (
+            <p className="flex items-center gap-2 text-xs text-slate-500">
+              <span
+                aria-hidden="true"
+                className="h-3 w-3 animate-spin rounded-full border-2 border-slate-700 border-t-emerald-400"
+              />
+              Dispatching scan to {API_BASE_URL} …
+            </p>
+          )}
+
+          {status === 'error' && requestError && (
+            <div className="rounded-md border border-red-500/50 bg-red-500/5 p-3">
+              <p className="text-xs font-semibold text-red-400">
+                {ERROR_TITLES[requestError.kind] ?? 'Scan failed'}
+              </p>
+              <p className="mt-1 text-xs leading-relaxed text-slate-400">
+                {requestError.message}
+              </p>
+              {requestError.kind === 'network' && (
+                <ul className="mt-2 list-inside list-disc space-y-0.5 text-[11px] text-slate-500">
+                  <li>Confirm the API is listening on {API_BASE_URL}</li>
+                  <li>
+                    Set CORS_ORIGIN to this app’s origin ({window.location.origin}) on the
+                    server
+                  </li>
+                  <li>Check the browser console — CORS rejections are only logged there</li>
+                </ul>
+              )}
+            </div>
+          )}
+
+          {status === 'success' && result && (
+            <div className="rounded-md border border-emerald-500/40 bg-emerald-500/5 p-3">
+              <p className="text-xs font-semibold text-emerald-400">Scan accepted</p>
+              <pre className="mt-1.5 max-h-40 overflow-auto text-[11px] leading-relaxed text-slate-400">
+                {JSON.stringify(result, null, 2)}
+              </pre>
+            </div>
+          )}
         </div>
       </form>
     </section>

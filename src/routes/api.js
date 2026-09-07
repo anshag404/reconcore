@@ -1,4 +1,6 @@
 const { Router } = require("express");
+const scanRoutes = require("./scan");
+
 const router = Router();
 
 // ── Health check ─────────────────────────────────────────────────────
@@ -22,5 +24,8 @@ router.get("/", (_req, res) => {
     },
   });
 });
+
+// ── Scan ─────────────────────────────────────────────────
+router.use("/scan", scanRoutes);
 
 module.exports = router;
