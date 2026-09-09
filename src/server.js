@@ -26,8 +26,12 @@ app.use("/api", (_req, res) => {
 const frontendDistPath = path.join(__dirname, "../frontend/dist");
 app.use(express.static(frontendDistPath));
 
-app.get("*", (req, res) => {
-  res.sendFile(path.join(frontendDistPath, "index.html"));
+app.use((req, res, next) => {
+  if (req.method === 'GET' && !req.path.startsWith('/api')) {
+    res.sendFile(path.join(frontendDistPath, "index.html"));
+  } else {
+    next();
+  }
 });
 
 // ── Global error handler ─────────────────────────────────────────────
