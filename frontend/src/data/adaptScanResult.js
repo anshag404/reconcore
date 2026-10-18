@@ -23,8 +23,14 @@ function uniqueHostname(host) {
   return names.length > 0 ? [...new Set(names)][0] : null
 }
 
-function normaliseCves(host) {
-  const raw = host.vulnerabilities ?? host.cves ?? []
+function normaliseCves(host, scanVulnerabilities = []) {
+  let raw = host.vulnerabilities ?? host.cves ?? []
+
+  if (!raw.length && scanVulnerabilities?.length) {
+    const hostAddrs = new Set((host.addresses ?? []).map((a) => a.addr).concat(hostId(host)))
+    const matching = scanVulnerabilities.filter((v) => hostAddrs.has(v.host))
+    raw = matching.flatMap((m) => m.vulnerabilities ?? [])
+  }
 
   return raw
     .map((entry) => ({
@@ -52,7 +58,7 @@ export function adaptScanResult(scan, { includeFiltered = false } = {}) {
       }))
       .sort((a, b) => a.port - b.port)
 
-    const cves = normaliseCves(host)
+    const cves = normaliseCves(host, scan?.vulnerabilities)
 
     return {
       id: hostId(host),

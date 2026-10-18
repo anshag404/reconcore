@@ -1,5 +1,5 @@
 import jsPDF from 'jspdf'
-import 'jspdf-autotable'
+import autoTable from 'jspdf-autotable'
 
 export default function Reports({ data }) {
   const downloadReport = () => {
@@ -47,7 +47,7 @@ export default function Reports({ data }) {
     })
 
     // Generate Table
-    doc.autoTable({
+    autoTable(doc, {
       startY: 58,
       head: [['IP Address', 'Hostname', 'OS', 'Port', 'Protocol', 'State', 'Service', 'Product', 'Version']],
       body: tableRows,
