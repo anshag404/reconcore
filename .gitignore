@@ -23,3 +23,10 @@ Thumbs.db
 # Build
 dist/
 build/
+
+# Reports & Documentation Artifacts
+*.docx
+
+# Screenshots
+screenshots/
+screenshot_*.png
