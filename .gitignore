@@ -26,7 +26,7 @@ build/
 
 # Reports & Documentation Artifacts
 *.docx
-
+*.pdf
 # Screenshots
 screenshots/
 screenshot_*.png
